@@ -1,0 +1,60 @@
+# ---------------- 运行数据（含账号、Cookie、日志，绝对不能提交）----------------
+pc/data/
+data/
+*.db
+*.db-journal
+*.db-wal
+*.sqlite
+*.sqlite3
+
+# 浏览器配置目录（含登录态）
+profiles/
+browser_data/
+
+# 日志与导出
+*.log
+logs/
+xiehe-log-*.txt
+
+# ---------------- 本机生成的快捷方式（含绝对路径）----------------
+*.lnk
+
+# ---------------- 构建产物与工具链 ----------------
+android/tools/
+android/build/
+*.apk.idsig
+*.zip
+platform-tools/
+
+# ---------------- Python ----------------
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+env/
+.pytest_cache/
+.mypy_cache/
+
+# ---------------- 编辑器 / 系统 ----------------
+.vscode/
+.idea/
+*.swp
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# ---------------- 私有上下文（AI 记忆、临时抓包）----------------
+.workbuddy/
+*.har
+*.jsonl
+
+# ---------------- 本地临时目录（抓包、调试脚本）----------------
+.tmp/
+.tmp_*
+
+# 根目录下的调试产物，别混进仓库
+/*.xml
+/*.png
+/*.jpg
+/*.jpeg
