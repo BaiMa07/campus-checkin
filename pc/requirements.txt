@@ -1,0 +1,6 @@
+# 电脑版依赖
+# 登录交给真实浏览器，不需要自己加密密码，所以不依赖 pycryptodome
+requests>=2.28
+playwright>=1.40
+numpy>=1.21
+pillow>=9.0
