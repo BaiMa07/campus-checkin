@@ -199,9 +199,12 @@ public class MainActivity extends Activity {
         java.util.List<Account> all = AccountStore.get(this).list();
         batchList.clear();
         int noPwd = 0;
+        int frozen = 0;
         for (Account a : all) {
             String pwd = Secure.decrypt(a.pwdEnc);
-            if (pwd.length() > 0 && a.studentNo != null && a.studentNo.length() > 0) {
+            if (Guard.frozen(a)) {
+                frozen++;
+            } else if (pwd.length() > 0 && a.studentNo != null && a.studentNo.length() > 0) {
                 batchList.add(a);
             } else if (all.size() > 0) {
                 noPwd++;
@@ -210,15 +213,19 @@ public class MainActivity extends Activity {
         if (batchList.isEmpty()) {
             new AlertDialog.Builder(this)
                     .setTitle("一键重新登录")
-                    .setMessage("还没有存过密码的账号。先点「登录 / 添加账号」，输入一次学号和密码，"
+                    .setMessage(frozen > 0
+                            ? "有 " + frozen + " 个账号正在风控冻结中，这几天先别动它，等解冻后再登录。"
+                            : "还没有存过密码的账号。先点「登录 / 添加账号」，输入一次学号和密码，"
                             + "之后就能用这个按钮一次性全部重新登录。")
                     .setPositiveButton("知道了", null)
                     .show();
             return;
         }
         String msg = "将依次自动登录 " + batchList.size() + " 个账号，每个大约 10 秒，"
+                + "账号之间会随机停 8~15 秒（登太密会被学校判定为会话异常）。"
                 + "全程不用操作（自动填表、自动过滑块）。"
                 + (noPwd > 0 ? "\n\n另有 " + noPwd + " 个账号没存密码，会被跳过。" : "")
+                + (frozen > 0 ? "\n\n" + frozen + " 个账号正在冻结中，这次跳过。" : "")
                 + "\n\n登录成功后不会立刻签到，只刷新状态；要签到请点「立即签到」。";
         new AlertDialog.Builder(this)
                 .setTitle("一键重新登录")
@@ -249,7 +256,14 @@ public class MainActivity extends Activity {
         }
         Account a = batchList.get(batchIdx);
         String pwd = Secure.decrypt(a.pwdEnc);
-        if (pwd.length() == 0) {
+        if (pwd.length() == 0 || Guard.frozen(a)) {
+            batchIdx++;
+            batchNext();
+            return;
+        }
+        // 刚登录过的号再登一次，等于故意制造"会话异常"，直接跳过
+        if (Guard.inCooldown(a)) {
+            Logs.add("【" + a.title() + "】刚登录过，跳过本次重登");
             batchIdx++;
             batchNext();
             return;
@@ -283,6 +297,13 @@ public class MainActivity extends Activity {
                         st.update(a);
                         continue;
                     }
+                    // 冻结期不发请求，免得把冻结时间越撞越长
+                    if (Guard.frozen(a)) {
+                        a.lastResult = "账号被冻结，" + Guard.untilText(a.blockedUntil) + " 后恢复";
+                        a.lastOk = Account.STATE_FAIL;
+                        st.update(a);
+                        continue;
+                    }
                     KqApi.Resp r = KqApi.getKqInfo(a.cookie, a.ua);
                     if (r.state == KqApi.State.OK && r.model != null) {
                         valid++;
@@ -296,6 +317,11 @@ public class MainActivity extends Activity {
                             a.lastResult = "已登录，未到签到时段（" + r.model.start + "-" + r.model.end + "）";
                             a.lastOk = Account.STATE_NONE;
                         }
+                    } else if (r.state == KqApi.State.BLOCKED) {
+                        a.blockedUntil = r.blockedUntil;
+                        a.lastResult = "账号被冻结，" + Guard.untilText(a.blockedUntil) + " 后恢复";
+                        a.lastOk = Account.STATE_FAIL;
+                        Logs.add("【" + a.title() + "】" + a.lastResult + "｜" + r.msg);
                     } else if (r.state == KqApi.State.EXPIRED) {
                         a.lastResult = "登录已失效，需要重新登录";
                         a.lastOk = Account.STATE_FAIL;
@@ -338,20 +364,18 @@ public class MainActivity extends Activity {
                     break;
                 }
                 sb.append("· ").append(a.title()).append("　");
-                KqApi.Resp r = KqApi.getKqInfo(a.cookie, a.ua == null ? "" : a.ua);
-                if (r.state == KqApi.State.EXPIRED) {
-                    sb.append("会话失效，请重新登录");
-                } else if (r.state != KqApi.State.OK || r.model == null) {
-                    sb.append("接口异常：").append(r.msg);
+                // 这里只读本地状态，不再请求服务器：刷新按钮和进前台各查一遍已经够了，
+                // 状态栏再查一遍会把请求量翻倍，白白多出"异常"痕迹
+                if (Guard.frozen(a)) {
+                    sb.append("冻结中，").append(Guard.untilText(a.blockedUntil)).append(" 恢复");
+                } else if (a.cookie == null || a.cookie.length() == 0) {
+                    sb.append("还没登录");
+                } else if (a.lastResult != null && a.lastResult.length() > 0) {
+                    sb.append(a.lastResult);
                 } else {
-                    KqModel m = r.model;
-                    sb.append(m.hasSigned ? "今天已签" : "今天未签");
-                    if (!m.hasSigned) {
-                        sb.append(m.inWindow ? "（在时段内）" : "（时段 " + m.start + "-" + m.end + "）");
-                    }
+                    sb.append(a.lastOk == Account.STATE_OK ? "今天已签" : "今天未签");
                 }
                 sb.append('\n');
-                try { Thread.sleep(150); } catch (InterruptedException ignored) { }
             }
         }
 
@@ -630,9 +654,11 @@ public class MainActivity extends Activity {
             if (res == RESULT_OK) batchOk++;
             else batchFail++;
             batchIdx++;
+            // 账号之间随机停 8~15 秒：连着登太密最容易被判"会话异常"
+            int wait = 8000 + (int) (Math.random() * 7000);
             ui.postDelayed(new Runnable() {
                 public void run() { batchNext(); }
-            }, 800);
+            }, wait);
             return;
         }
         if (req != REQ_EXPORT) return;

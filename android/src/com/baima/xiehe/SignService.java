@@ -103,6 +103,12 @@ public class SignService extends Service {
 
         try {
             long deadline = System.currentTimeMillis() + WINDOW_MS;
+            // 定时任务错峰：每天同一秒提交太整齐，前 5~120 秒随机等一下
+            if (!force) {
+                int jitter = 5 + new java.util.Random().nextInt(86);
+                Logs.add("错峰启动：随机等待 " + jitter + " 秒再签");
+                if (!sleep(jitter * 1000L)) return;
+            }
             for (int round = 0; round < 46 && System.currentTimeMillis() < deadline; round++) {
                 if (stopped) break;
                 if (!force && !p.enabled() && round > 0) {
@@ -141,11 +147,33 @@ public class SignService extends Service {
                     break;
                 }
                 if (softN == list.size()) {
+                    // 冻结中的号要等解冻再接着试，不能直接收工
+                    long soonest = Long.MAX_VALUE;
+                    for (Account x : list) {
+                        if (Guard.frozen(x) && x.blockedUntil < soonest) soonest = x.blockedUntil;
+                    }
+                    if (soonest != Long.MAX_VALUE) {
+                        long waitMs = Math.max(5000,
+                                Math.min(120000, soonest - System.currentTimeMillis() + 3000));
+                        update("账号冻结中，" + (waitMs / 1000) + " 秒后自动再试");
+                        if (!sleep(waitMs)) break;
+                        continue;
+                    }
                     // 全部是"还没到签到时段/今天请假"，没必要继续等
                     update("暂时不用签：" + list.get(0).lastResult);
                     break;
                 }
                 if (expiredN == list.size()) {
+                    // 刚登录过的号在冷却，等冷却过了再试，别立刻又去登
+                    boolean cooling = false;
+                    for (Account x : list) {
+                        if (Guard.inCooldown(x)) { cooling = true; break; }
+                    }
+                    if (cooling && deadline - System.currentTimeMillis() > 90000) {
+                        update("登录冷却中，60 秒后再试");
+                        if (!sleep(60000)) break;
+                        continue;
+                    }
                     update("所有账号的登录都失效了，需要重新登录");
                     Notifier.result(this, "会话全部失效，请打开 App 重新登录");
                     p.setLastResult("会话失效 " + now());

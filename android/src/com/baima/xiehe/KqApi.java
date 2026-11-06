@@ -29,12 +29,13 @@ public class KqApi {
             "Mozilla/5.0 (Linux; Android 13; PGT-AN20) AppleWebKit/537.36 "
                     + "(KHTML, like Gecko) Chrome/131.0.0.0 Mobile Safari/537.36";
 
-    public enum State { OK, EXPIRED, NET_ERROR, BIZ_ERROR }
+    public enum State { OK, EXPIRED, BLOCKED, NET_ERROR, BIZ_ERROR }
 
     public static class Resp {
         public State state = State.NET_ERROR;
         public String msg = "";
         public String raw = "";
+        public long blockedUntil;   // 被冻结时：解冻时间戳
         public JSONObject data;
         public KqModel model;
     }
@@ -139,8 +140,21 @@ public class KqApi {
             }
             String t = text.trim();
             if (t.startsWith("<") || t.contains("authserver") || t.contains("统一身份认证")) {
+                if (Guard.isFreezeText(t)) {
+                    r.state = State.BLOCKED;
+                    r.blockedUntil = Guard.freezeUntil(t);
+                    r.msg = "账号被冻结（" + Guard.untilText(r.blockedUntil) + " 恢复）";
+                    return r;
+                }
                 r.state = State.EXPIRED;
                 r.msg = "登录已失效（返回登录页）";
+                return r;
+            }
+
+            if (Guard.isFreezeText(t)) {
+                r.state = State.BLOCKED;
+                r.blockedUntil = Guard.freezeUntil(t);
+                r.msg = "账号被冻结（" + Guard.untilText(r.blockedUntil) + " 恢复）";
                 return r;
             }
 
@@ -151,8 +165,15 @@ public class KqApi {
                 r.data = j.optJSONObject("data");
                 r.msg = j.optString("msg", "");
             } else {
-                r.state = State.BIZ_ERROR;
-                r.msg = j.optString("msg", "code=" + c);
+                String m = j.optString("msg", "code=" + c);
+                if (Guard.isFreezeText(m)) {
+                    r.state = State.BLOCKED;
+                    r.blockedUntil = Guard.freezeUntil(m);
+                    r.msg = "账号被冻结（" + Guard.untilText(r.blockedUntil) + " 恢复）";
+                } else {
+                    r.state = State.BIZ_ERROR;
+                    r.msg = m;
+                }
             }
             return r;
         } catch (Exception e) {

@@ -29,9 +29,24 @@ public class SignCore {
      * @param allowRelogin 会话失效时是否允许先自动重登再重试（重登成功后只重试一次，避免死循环）
      */
     private static Result sign(Context ctx, Account a, boolean allowRelogin) {
-        Result r = new Result();
         if (a == null) {
+            Result r = new Result();
             r.msg = "账号不存在";
+            return r;
+        }
+        // 同一个账号同一时刻只允许一条链路在动它：后台服务、手动签到、重登排队来，
+        // 并发的两个会话最容易触发学校的"会话异常"风控
+        synchronized (Guard.lock(a.id)) {
+            return doSign(ctx, a, allowRelogin);
+        }
+    }
+
+    private static Result doSign(Context ctx, Account a, boolean allowRelogin) {
+        Result r = new Result();
+        // 冻结期一个请求都不发，等服务端解冻
+        if (Guard.frozen(a)) {
+            r.soft = true;
+            r.msg = "账号被冻结，" + Guard.untilText(a.blockedUntil) + " 后自动恢复，本轮跳过";
             return r;
         }
         if (a.cookie == null || a.cookie.length() == 0) {
@@ -47,6 +62,9 @@ public class SignCore {
         String ua = (a.ua != null && a.ua.length() > 0) ? a.ua : KqApi.DEFAULT_UA;
 
         KqApi.Resp info = KqApi.getKqInfo(a.cookie, ua);
+        if (info.state == KqApi.State.BLOCKED) {
+            return frozen(ctx, a, r, info);
+        }
         if (info.state == KqApi.State.EXPIRED) {
             return reloginThenRetry(ctx, a, r, allowRelogin, "登录已失效");
         }
@@ -129,6 +147,9 @@ public class SignCore {
         double[] c = KqModel.jitter(pt.lat, pt.lng);
         KqApi.Resp sub = KqApi.addKqInfo(a.cookie, ua, pt.name, c[1], c[0]);
 
+        if (sub.state == KqApi.State.BLOCKED) {
+            return frozen(ctx, a, r, sub);
+        }
         if (sub.state == KqApi.State.EXPIRED) {
             return reloginThenRetry(ctx, a, r, allowRelogin, "提交时登录已失效");
         }
@@ -175,17 +196,33 @@ public class SignCore {
             return r;
         }
 
+        // 刚登录过就再等等：短时间连着重登是"会话异常"的主要来源
+        if (Guard.inCooldown(a)) {
+            long left = Guard.cooldownLeft(a) / 1000;
+            r.expired = true;
+            r.retry = true;
+            r.msg = "刚登录过（" + (left > 0 ? left + " 秒后" : "稍后") + "再试），先不重复登录";
+            save(ctx, a, r);
+            Logs.add("【" + a.title() + "】" + why + "，但距上次登录不足 3 分钟，跳过重登");
+            return r;
+        }
+
         Logs.add("【" + a.title() + "】" + why + "，开始后台自动重登");
         Notifier.progress(ctx, "【" + a.title() + "】登录失效，正在自动重登…");
         SilentLogin.Result lr = SilentLogin.relogin(ctx, a, 60);
         if (lr.ok) {
             a.cookie = lr.cookie;
+            a.lastLoginAt = System.currentTimeMillis();
             a.lastOk = Account.STATE_NONE;
             a.lastResult = "已自动重登，正在签到";
             a.lastTime = System.currentTimeMillis();
             AccountStore.get(ctx).update(a);
             Logs.add("【" + a.title() + "】自动重登成功，继续本次签到");
-            return sign(ctx, a, false);
+            return doSign(ctx, a, false);
+        }
+
+        if (Guard.isFreezeText(lr.reason)) {
+            return frozen(ctx, a, r, lr.reason);
         }
 
         r.expired = true;
@@ -195,6 +232,36 @@ public class SignCore {
         AccountStore.get(ctx).update(a);
         notifyLogin(ctx, a);
         Logs.add("【" + a.title() + "】自动重登失败：" + lr.reason);
+        return r;
+    }
+
+    /**
+     * 被风控冻结：记下解冻时间，之后到点前一个请求都不发。
+     * 不算失败、也不重试，避免越撞越久。
+     */
+    private static Result frozen(Context ctx, Account a, Result r, KqApi.Resp resp) {
+        return frozen(ctx, a, r, resp.blockedUntil, resp.msg);
+    }
+
+    /** 从一段文字（比如登录页提示）里认出冻结 */
+    private static Result frozen(Context ctx, Account a, Result r, String text) {
+        return frozen(ctx, a, r, Guard.freezeUntil(text), text);
+    }
+
+    private static Result frozen(Context ctx, Account a, Result r, long until,
+                                 String serverMsg) {
+        if (until <= System.currentTimeMillis()) until = Guard.freezeUntil(serverMsg);
+        a.blockedUntil = until;
+        r.soft = true;
+        r.msg = "账号被风控冻结，" + Guard.untilText(until) + " 后自动恢复（期间不发请求）";
+        a.lastTime = System.currentTimeMillis();
+        a.lastResult = r.msg;
+        AccountStore.get(ctx).update(a);
+        Logs.add("【" + a.title() + "】" + r.msg + "｜原始提示：" + serverMsg);
+        try {
+            Notifier.result(ctx, "【" + a.title() + "】" + r.msg
+                    + "\n期间请勿手动登录，越登冻得越久");
+        } catch (Throwable ignored) { }
         return r;
     }
 

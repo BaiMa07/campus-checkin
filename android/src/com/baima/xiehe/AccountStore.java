@@ -13,7 +13,7 @@ import java.util.List;
 public class AccountStore extends SQLiteOpenHelper {
 
     private static final String DB_NAME = "xiehe.db";
-    private static final int DB_VER = 5;
+    private static final int DB_VER = 6;
     private static final String T = "accounts";
 
     private static AccountStore inst;
@@ -45,6 +45,8 @@ public class AccountStore extends SQLiteOpenHelper {
                 + "last_loc_name TEXT,"
                 + "last_loc_lat TEXT,"
                 + "last_loc_lng TEXT,"
+                + "blocked_until INTEGER DEFAULT 0,"
+                + "last_login_at INTEGER DEFAULT 0,"
                 + "last_time INTEGER DEFAULT 0,"
                 + "last_result TEXT,"
                 + "last_ok INTEGER DEFAULT -1,"
@@ -84,6 +86,11 @@ public class AccountStore extends SQLiteOpenHelper {
             try { db.execSQL("ALTER TABLE " + T + " ADD COLUMN loc_name TEXT"); } catch (Throwable ignored) { }
             try { db.execSQL("ALTER TABLE " + T + " ADD COLUMN loc_lat TEXT"); } catch (Throwable ignored) { }
             try { db.execSQL("ALTER TABLE " + T + " ADD COLUMN loc_lng TEXT"); } catch (Throwable ignored) { }
+        }
+        if (o < 6) {
+            // 风控相关：冻结到什么时间、上次登录是什么时间
+            try { db.execSQL("ALTER TABLE " + T + " ADD COLUMN blocked_until INTEGER DEFAULT 0"); } catch (Throwable ignored) { }
+            try { db.execSQL("ALTER TABLE " + T + " ADD COLUMN last_login_at INTEGER DEFAULT 0"); } catch (Throwable ignored) { }
         }
     }
 
@@ -142,6 +149,8 @@ public class AccountStore extends SQLiteOpenHelper {
         v.put("last_loc_name", a.lastLocName);
         v.put("last_loc_lat", String.valueOf(a.lastLocLat));
         v.put("last_loc_lng", String.valueOf(a.lastLocLng));
+        v.put("blocked_until", a.blockedUntil);
+        v.put("last_login_at", a.lastLoginAt);
         v.put("last_time", a.lastTime);
         v.put("last_result", a.lastResult);
         v.put("last_ok", a.lastOk);
@@ -171,6 +180,8 @@ public class AccountStore extends SQLiteOpenHelper {
         v.put("last_loc_name", a.lastLocName);
         v.put("last_loc_lat", String.valueOf(a.lastLocLat));
         v.put("last_loc_lng", String.valueOf(a.lastLocLng));
+        v.put("blocked_until", a.blockedUntil);
+        v.put("last_login_at", a.lastLoginAt);
         v.put("last_time", a.lastTime);
         v.put("last_result", a.lastResult);
         v.put("last_ok", a.lastOk);
@@ -373,6 +384,8 @@ public class AccountStore extends SQLiteOpenHelper {
         a.lastLocName = str(c, "last_loc_name");
         a.lastLocLat = dbl(c, "last_loc_lat");
         a.lastLocLng = dbl(c, "last_loc_lng");
+        a.blockedUntil = c.getLong(c.getColumnIndex("blocked_until"));
+        a.lastLoginAt = c.getLong(c.getColumnIndex("last_login_at"));
         a.lastTime = c.getLong(c.getColumnIndex("last_time"));
         a.lastResult = str(c, "last_result");
         a.lastOk = c.getInt(c.getColumnIndex("last_ok"));

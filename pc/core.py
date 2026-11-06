@@ -8,6 +8,7 @@ import json
 import math
 import os
 import random
+import re
 import sqlite3
 import sys
 import time
@@ -29,6 +30,9 @@ UA = ("Mozilla/5.0 (Linux; Android 14; PGT-AN20) AppleWebKit/537.36 "
       "(KHTML, like Gecko) Chrome/131.0.0.0 Mobile Safari/537.36")
 
 STATE_NONE, STATE_FAIL, STATE_OK = -1, 0, 1
+
+# 账号 id -> 冻结到期时间戳
+_blocked = {}
 
 
 def ensure_dirs():
@@ -139,10 +143,28 @@ def make_session(cookies):
     return s
 
 
+class Frozen(Exception):
+    """学校风控把号冻了（消息中心那条"会话异常"）。解冻前一个请求都别发。"""
+    pass
+
+
+# 进程内的登录冷却：同一个号刚登过就别连着登，短时间多次登录会被判会话异常
+_last_login = {}
+LOGIN_COOLDOWN = 180
+
+
+def frozen_text(s):
+    s = s or ""
+    return ("冻结" in s) or ("会话" in s and "异常" in s)
+
+
 def get_info(session):
-    """返回 data 字典；会话失效或异常返回 None"""
+    """返回 data 字典；会话失效或异常返回 None；被风控抛 Frozen"""
     try:
         r = session.post(API + "getKqInfo.do", data={"data": "{}"}, timeout=20)
+        text = r.text or ""
+        if frozen_text(text):
+            raise Frozen(text[:300])
         if "authserver" in (r.url or ""):
             return None
         if r.status_code != 200:
@@ -151,6 +173,8 @@ def get_info(session):
         if str(j.get("code")) != "0":
             return None
         return j.get("data") or {}
+    except Frozen:
+        raise
     except Exception:
         return None
 
@@ -256,6 +280,31 @@ def auto_relogin(acc, timeout=200):
     return ck or None
 
 
+def _frozen(store, acc, res, text):
+    """记下冻结，按解冻时间冷却；期间不再发请求"""
+    until = time.time() + 600
+    m = re.search(r"(\d{4}-\d{2}-\d{2}[ T]\d{2}:\d{2}:\d{2})", text or "")
+    if m:
+        try:
+            until = datetime.strptime(m.group(1).replace("T", " "),
+                                      "%Y-%m-%d %H:%M:%S").timestamp()
+        except Exception:
+            pass
+    _blocked[acc["id"]] = until
+    res["msg"] = "账号被学校风控冻结，%s 后自动恢复（期间不发请求）" % \
+                 datetime.fromtimestamp(until).strftime("%H:%M:%S")
+    res["soft"] = True
+    res["expired"] = False
+    _save(store, acc, res)
+    log("【%s】%s" % (acc.get("name") or acc.get("student_no"), res["msg"]))
+    return res
+
+
+def _blocked_left(acc):
+    left = _blocked.get(acc.get("id"), 0) - time.time()
+    return left if left > 0 else 0
+
+
 def sign_account(store, acc, force=False):
     """
     签一个账号，返回 dict：
@@ -266,6 +315,12 @@ def sign_account(store, acc, force=False):
     """
     res = {"ok": False, "msg": "", "expired": False, "soft": False}
 
+    if _blocked_left(acc) > 0:
+        res["msg"] = "账号被冻结，%s 后自动恢复，本轮跳过" % \
+                     datetime.fromtimestamp(_blocked[acc["id"]]).strftime("%H:%M:%S")
+        res["soft"] = True
+        return res
+
     ck = store.cookies(acc)
     if not ck:
         res["msg"] = "没有登录凭证，请点「重新登录」"
@@ -274,18 +329,33 @@ def sign_account(store, acc, force=False):
         return res
 
     s = make_session(ck)
-    info = get_info(s)
+    try:
+        info = get_info(s)
+    except Frozen as e:
+        return _frozen(store, acc, res, str(e))
     if info is None:
-        # 会话过期但存过密码，就自己重新登录一次
+        # 会话过期但存过密码，就自己重新登录一次（刚登过就先等等，别连环登）
+        last = _last_login.get(acc.get("id"), 0)
+        if time.time() - last < LOGIN_COOLDOWN:
+            res["msg"] = "刚登录过，先不重复登录（%d 秒后再试）" % \
+                         int(LOGIN_COOLDOWN - (time.time() - last))
+            res["expired"] = True
+            res["soft"] = True
+            _save(store, acc, res)
+            return res
         new_ck = auto_relogin(acc)
         if new_ck:
             acc["cookies"] = new_ck
+            _last_login[acc.get("id")] = time.time()
             try:
                 store.update(acc)
             except Exception:
                 pass
             s = make_session(new_ck)
-            info = get_info(s)
+            try:
+                info = get_info(s)
+            except Frozen as e:
+                return _frozen(store, acc, res, str(e))
         if info is None:
             res["msg"] = "登录已失效，需要重新登录"
             res["expired"] = True
@@ -336,9 +406,15 @@ def sign_account(store, acc, force=False):
     addr = pt.get("QDDD") or ""
     resp = add_sign(s, lat, lng, addr)
 
+    if frozen_text(str(resp.get("msg") or "")):
+        return _frozen(store, acc, res, str(resp.get("msg")))
+
     if str(resp.get("code")) == "0":
         time.sleep(2)
-        now = get_info(s)
+        try:
+            now = get_info(s)
+        except Frozen as e:
+            return _frozen(store, acc, res, str(e))
         if now and (now.get("QD_INFO") or {}).get("hasQd"):
             res["ok"] = True
             res["msg"] = "签到成功（%s）" % addr

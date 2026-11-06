@@ -24,9 +24,12 @@ public class Account {
     public long lastTime;           // 上次签到尝试时间
     public String lastResult = "";  // 上次结果文字
     public int lastOk = STATE_NONE;
+    public long blockedUntil;       // 被风控冻结到什么时候（毫秒时间戳，0=没冻）
+    public long lastLoginAt;        // 上次登录成功的时间，用来做登录冷却
     public long createdAt;
 
     public String stateText() {
+        if (Guard.frozen(this)) return "冻结中";
         if (lastOk == STATE_OK) return "已签到";
         if (lastOk == STATE_FAIL) return "失败";
         return "未签";

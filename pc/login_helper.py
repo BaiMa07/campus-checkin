@@ -210,6 +210,10 @@ def main():
                 break
             try:
                 body = page.inner_text("body")[:3000]
+                if core.frozen_text(body):
+                    core.log("登录页提示账号被冻结，先停手，别再登了")
+                    closed = "frozen"
+                    break
                 for kw in ("密码有误", "密码错误", "密码不正确", "用户名或者密码",
                            "用户名或密码", "账号或密码", "用户名不存在",
                            "账户被锁定", "账号被锁定", "验证码错误"):
@@ -244,6 +248,8 @@ def main():
                 pass
             if closed == "badpwd":
                 return 5
+            if closed == "frozen":
+                return 6
             if closed:
                 core.log("登录窗口被关闭，放弃")
                 return 3

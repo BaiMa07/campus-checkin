@@ -288,8 +288,9 @@ public class LoginActivity extends Activity {
         new Thread(new Runnable() {
             public void run() {
                 KqApi.Resp ok = null;
+                KqApi.Resp blocked = null;
                 String cookie = "";
-                for (int i = 0; i < 16; i++) {
+                for (int i = 0; i < 10; i++) {
                     collectCookies();
                     cookie = cookieString();
                     KqApi.Resp r = KqApi.getKqInfo(cookie, Prefs.get(LoginActivity.this).ua());
@@ -297,12 +298,41 @@ public class LoginActivity extends Activity {
                         ok = r;
                         break;
                     }
+                    if (r.state == KqApi.State.BLOCKED) {
+                        // 风控冻结：继续登只会越冻越久，立刻停手
+                        blocked = r;
+                        break;
+                    }
                     if (i == 0) {
                         String names;
                         synchronized (jar) { names = jar.keySet().toString(); }
                         Logs.add("Cookie 长度 " + cookie.length() + " " + names + " → " + r.msg);
                     }
-                    try { Thread.sleep(1000); } catch (InterruptedException ignored) { }
+                    // 每 2 秒确认一次就够，登录成功后连着刷接口容易被判会话异常
+                    try { Thread.sleep(2000); } catch (InterruptedException ignored) { }
+                }
+                if (blocked != null) {
+                    final long until = blocked.blockedUntil;
+                    Account acc = accountId > 0 ? AccountStore.get(LoginActivity.this).get(accountId) : null;
+                    if (acc != null) {
+                        acc.blockedUntil = until;
+                        acc.lastResult = "账号被冻结，" + Guard.untilText(until) + " 后恢复";
+                        acc.lastOk = Account.STATE_FAIL;
+                        AccountStore.get(LoginActivity.this).update(acc);
+                    }
+                    verifying = false;
+                    Logs.add("登录被风控拦截：" + blocked.msg);
+                    runOnUiThread(new Runnable() {
+                        public void run() {
+                            Toast.makeText(LoginActivity.this,
+                                    "账号被学校风控冻结，" + Guard.untilText(until)
+                                            + " 后自动恢复，期间别再登录了",
+                                    Toast.LENGTH_LONG).show();
+                            setResult(RESULT_CANCELED);
+                            finish();
+                        }
+                    });
+                    return;
                 }
                 if (ok == null) {
                     Logs.add("Cookie 有了但接口还没通（长度 " + cookie.length() + "）");
@@ -380,6 +410,8 @@ public class LoginActivity extends Activity {
         }
         a.cookie = cookie;
         a.ua = Prefs.get(this).ua();
+        a.lastLoginAt = System.currentTimeMillis();   // 登录冷却起点
+        a.blockedUntil = 0;                            // 能登进来就说明已经解冻了
         if (no.length() > 0) a.studentNo = no;
         if (dorm.length() > 0) a.dorm = dorm;
         if (display.length() > 0) {

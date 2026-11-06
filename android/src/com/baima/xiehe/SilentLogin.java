@@ -171,11 +171,13 @@ public class SilentLogin {
         } catch (InterruptedException ignored) { }
 
         int tick = 0;
+        String lastCk = "";
+        long lastCheckAt = 0;
 
         long deadline = System.currentTimeMillis() + timeoutSeconds * 1000L;
         while (System.currentTimeMillis() < deadline) {
             try {
-                Thread.sleep(1500);
+                Thread.sleep(2000);
             } catch (InterruptedException e) {
                 res.reason = "被中断";
                 break;
@@ -188,10 +190,18 @@ public class SilentLogin {
                 Logs.add("后台重登：等待中，Cookie 长度 " + ck.length());
             }
             if (ck.length() < 50) continue;
+            // Cookie 没变化就不用反复验：刚登录就连着打接口，最容易被判"会话异常"
+            if (ck.equals(lastCk) && System.currentTimeMillis() - lastCheckAt < 6000) continue;
+            lastCk = ck;
+            lastCheckAt = System.currentTimeMillis();
             KqApi.Resp r = KqApi.getKqInfo(ck, KqApi.DEFAULT_UA);
             if (r.state == KqApi.State.OK) {
                 res.ok = true;
                 res.cookie = ck;
+                break;
+            }
+            if (r.state == KqApi.State.BLOCKED) {
+                res.reason = r.msg;
                 break;
             }
         }
