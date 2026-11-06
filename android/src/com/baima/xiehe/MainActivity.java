@@ -38,6 +38,13 @@ public class MainActivity extends Activity {
     private TextView tvLog;
     private TextView tvScheduleSub;
     private static long lastCheck;
+
+    private static final int REQ_BATCH = 4001;
+    private java.util.List<Account> batchList = new java.util.ArrayList<Account>();
+    private int batchIdx;
+    private boolean batchRunning;
+    private int batchOk;
+    private int batchFail;
     private Switch swSchedule;
     private boolean binding;
     private final Handler ui = new Handler(Looper.getMainLooper());
@@ -52,6 +59,7 @@ public class MainActivity extends Activity {
         Prefs.get(this).migrateIfNeeded();
         Net.init(this);
         AccountStore.get(this).dedupe();
+        Storage.autoTrim(this);
 
         tvStatus = (TextView) findViewById(R.id.tvStatus);
         tvLog = (TextView) findViewById(R.id.tvLog);
@@ -78,6 +86,9 @@ public class MainActivity extends Activity {
         });
         findViewById(R.id.btnRefresh).setOnClickListener(new View.OnClickListener() {
             public void onClick(View v) { refresh(); }
+        });
+        findViewById(R.id.btnRelogin).setOnClickListener(new View.OnClickListener() {
+            public void onClick(View v) { startBatchRelogin(); }
         });
         findViewById(R.id.btnSign).setOnClickListener(new View.OnClickListener() {
             public void onClick(View v) { startSign(); }
@@ -171,6 +182,82 @@ public class MainActivity extends Activity {
         }
         renderToggle();
         refresh();
+    }
+
+    /* ---------------- 一键重新登录 ---------------- */
+
+    /** 把所有存过密码的账号排队，依次自动登录（每个都是自动填表 + 自动过滑块） */
+    private void startBatchRelogin() {
+        if (batchRunning) {
+            toast("正在批量登录中…");
+            return;
+        }
+        java.util.List<Account> all = AccountStore.get(this).list();
+        batchList.clear();
+        int noPwd = 0;
+        for (Account a : all) {
+            String pwd = Secure.decrypt(a.pwdEnc);
+            if (pwd.length() > 0 && a.studentNo != null && a.studentNo.length() > 0) {
+                batchList.add(a);
+            } else if (all.size() > 0) {
+                noPwd++;
+            }
+        }
+        if (batchList.isEmpty()) {
+            new AlertDialog.Builder(this)
+                    .setTitle("一键重新登录")
+                    .setMessage("还没有存过密码的账号。先点「登录 / 添加账号」，输入一次学号和密码，"
+                            + "之后就能用这个按钮一次性全部重新登录。")
+                    .setPositiveButton("知道了", null)
+                    .show();
+            return;
+        }
+        String msg = "将依次自动登录 " + batchList.size() + " 个账号，每个大约 10 秒，"
+                + "全程不用操作（自动填表、自动过滑块）。"
+                + (noPwd > 0 ? "\n\n另有 " + noPwd + " 个账号没存密码，会被跳过。" : "")
+                + "\n\n登录成功后不会立刻签到，只刷新状态；要签到请点「立即签到」。";
+        new AlertDialog.Builder(this)
+                .setTitle("一键重新登录")
+                .setMessage(msg)
+                .setPositiveButton("开始", new DialogInterface.OnClickListener() {
+                    public void onClick(DialogInterface d, int w) {
+                        batchOk = 0;
+                        batchFail = 0;
+                        batchIdx = 0;
+                        batchRunning = true;
+                        batchNext();
+                    }
+                })
+                .setNegativeButton("取消", null)
+                .show();
+    }
+
+    private void batchNext() {
+        if (!batchRunning) return;
+        if (batchIdx >= batchList.size()) {
+            batchRunning = false;
+            String tip = "全部处理完：成功 " + batchOk + " 个"
+                    + (batchFail > 0 ? "，失败 " + batchFail + " 个" : "");
+            toast(tip);
+            Logs.add("一键重新登录结束：" + tip);
+            refresh();
+            return;
+        }
+        Account a = batchList.get(batchIdx);
+        String pwd = Secure.decrypt(a.pwdEnc);
+        if (pwd.length() == 0) {
+            batchIdx++;
+            batchNext();
+            return;
+        }
+        toast("正在登录第 " + (batchIdx + 1) + "/" + batchList.size() + " 个：" + a.title());
+        Intent i = new Intent(this, LoginActivity.class);
+        i.putExtra(LoginActivity.EXTRA_ACCOUNT_ID, a.id);
+        i.putExtra(LoginActivity.EXTRA_USER, a.studentNo);
+        i.putExtra(LoginActivity.EXTRA_PWD, pwd);
+        i.putExtra(LoginActivity.EXTRA_AUTO, true);
+        i.putExtra(LoginActivity.EXTRA_BATCH, true);
+        startActivityForResult(i, REQ_BATCH);
     }
 
     /** 真正的刷新：逐个账号问一次服务器，把状态和失败原因更新掉 */
@@ -441,54 +528,30 @@ public class MainActivity extends Activity {
     /* ---------------- 缓存与日志 ---------------- */
 
     private void confirmClearCache() {
-        final File[] dirs = new File[]{getCacheDir(), getExternalCacheDir()};
-        long size = 0;
-        for (File d : dirs) size += dirSize(d);
+        final long cache = Storage.cacheBytes(this);
+        final long web = Storage.webBytes(this);
+        final long log = Storage.logBytes();
         new AlertDialog.Builder(this)
                 .setTitle("清除缓存")
-                .setMessage("将删除 App 的全部缓存（网页缓存、临时文件），共 "
-                        + human(size) + "。\n\n不会删除：账号列表、登录凭证、运行日志。"
-                        + "\n\n清完会重新统计一次，剩余大小应该接近 0。")
+                .setMessage("当前占用：\n"
+                        + "· 网页数据 " + human(web) + "（登录网页留下的，占大头）\n"
+                        + "· 缓存文件 " + human(cache) + "\n"
+                        + "· 运行日志 " + human(log) + "\n\n"
+                        + "清除会删掉网页数据和缓存，共约 " + human(cache + web)
+                        + "，网页里的登录状态也会一起清掉（不影响已保存的账号，"
+                        + "需要时用「一键重新登录」重登）。\n\n"
+                        + "不会删除：账号、密码、签到记录。")
                 .setPositiveButton("清除", new DialogInterface.OnClickListener() {
-                    public void onClick(DialogInterface d, int w) { doClearCache(dirs); }
+                    public void onClick(DialogInterface d, int w) { doClearCache(); }
                 })
                 .setNegativeButton("取消", null)
                 .show();
     }
 
-    private void doClearCache(File[] dirs) {
-        long freed = 0;
-        int files = 0;
-        for (File dir : dirs) {
-            if (dir == null || !dir.exists()) continue;
-            File[] kids = dir.listFiles();
-            if (kids == null) continue;
-            for (File f : kids) {
-                long s = dirSize(f);
-                int n = countFiles(f);
-                if (deleteTree(f)) {
-                    freed += s;
-                    files += n;
-                }
-            }
-        }
-        long left = 0;
-        for (File dir : dirs) left += dirSize(dir);
-        if (left > 0 && files > 0) {
-            // 有些文件被占用（比如 WebView 正在写），再补一刀
-            for (File dir : dirs) {
-                if (dir == null || !dir.exists()) continue;
-                File[] kids = dir.listFiles();
-                if (kids == null) continue;
-                for (File f : kids) deleteTree(f);
-            }
-            left = 0;
-            for (File dir : dirs) left += dirSize(dir);
-        }
-        Logs.add("已清除缓存：" + files + " 个文件，" + human(freed)
-                + (left > 0 ? "（仍有 " + human(left) + " 被系统占用，稍后自动释放）" : "，已清空"));
-        toast("已清除缓存，释放 " + human(freed));
-        refresh();
+    private void doClearCache() {
+        long freed = Storage.clear(this);
+        toast("已清理，释放 " + human(freed));
+        tvStatus.setText(buildStatus());
     }
 
     private void confirmClearLog() {
@@ -527,6 +590,16 @@ public class MainActivity extends Activity {
     @Override
     protected void onActivityResult(int req, int res, Intent data) {
         super.onActivityResult(req, res, data);
+        if (req == REQ_BATCH) {
+            if (!batchRunning) return;
+            if (res == RESULT_OK) batchOk++;
+            else batchFail++;
+            batchIdx++;
+            ui.postDelayed(new Runnable() {
+                public void run() { batchNext(); }
+            }, 800);
+            return;
+        }
         if (req != REQ_EXPORT) return;
         if (res != RESULT_OK || data == null || data.getData() == null) {
             toast("已取消导出");
@@ -548,34 +621,6 @@ public class MainActivity extends Activity {
         } finally {
             if (os != null) try { os.close(); } catch (Exception ignored) { }
         }
-    }
-
-    private static long dirSize(File f) {
-        if (f == null || !f.exists()) return 0;
-        if (f.isFile()) return f.length();
-        long s = 0;
-        File[] kids = f.listFiles();
-        if (kids != null) for (File k : kids) s += dirSize(k);
-        return s;
-    }
-
-    private static int countFiles(File f) {
-        if (f == null || !f.exists()) return 0;
-        if (f.isFile()) return 1;
-        int n = 0;
-        File[] kids = f.listFiles();
-        if (kids != null) for (File k : kids) n += countFiles(k);
-        return n;
-    }
-
-    /** 只在自己 App 的 cache 目录下递归删除 */
-    private static boolean deleteTree(File f) {
-        if (f == null || !f.exists()) return true;
-        if (f.isDirectory()) {
-            File[] kids = f.listFiles();
-            if (kids != null) for (File k : kids) deleteTree(k);
-        }
-        return f.delete();
     }
 
     private static String human(long b) {

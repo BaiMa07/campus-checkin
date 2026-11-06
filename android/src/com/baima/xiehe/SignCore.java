@@ -22,16 +22,20 @@ public class SignCore {
 
     /** 签到指定账号，并把结果写回数据库 */
     public static Result sign(Context ctx, Account a) {
+        return sign(ctx, a, true);
+    }
+
+    /**
+     * @param allowRelogin 会话失效时是否允许先自动重登再重试（重登成功后只重试一次，避免死循环）
+     */
+    private static Result sign(Context ctx, Account a, boolean allowRelogin) {
         Result r = new Result();
         if (a == null) {
             r.msg = "账号不存在";
             return r;
         }
         if (a.cookie == null || a.cookie.length() == 0) {
-            r.msg = "还没登录，点账号名重新登录";
-            r.expired = true;
-            save(ctx, a, r);
-            return r;
+            return reloginThenRetry(ctx, a, r, allowRelogin, "还没有登录凭证");
         }
 
         // 配了多个代理就每个账号换一个出口，免得几个号都从同一个 IP 出去
@@ -44,11 +48,7 @@ public class SignCore {
 
         KqApi.Resp info = KqApi.getKqInfo(a.cookie, ua);
         if (info.state == KqApi.State.EXPIRED) {
-            r.msg = "登录已失效，需要重新登录";
-            r.expired = true;
-            save(ctx, a, r);
-            notifyLogin(ctx, a);
-            return r;
+            return reloginThenRetry(ctx, a, r, allowRelogin, "登录已失效");
         }
         if (info.state != KqApi.State.OK || info.model == null) {
             r.msg = "接口异常：" + info.msg;
@@ -130,11 +130,7 @@ public class SignCore {
         KqApi.Resp sub = KqApi.addKqInfo(a.cookie, ua, pt.name, c[1], c[0]);
 
         if (sub.state == KqApi.State.EXPIRED) {
-            r.msg = "登录已失效，需要重新登录";
-            r.expired = true;
-            save(ctx, a, r);
-            notifyLogin(ctx, a);
-            return r;
+            return reloginThenRetry(ctx, a, r, allowRelogin, "提交时登录已失效");
         }
         if (sub.state != KqApi.State.OK) {
             r.msg = "提交失败：" + sub.msg;
@@ -160,6 +156,45 @@ public class SignCore {
             r.msg = "已提交，状态待刷新（" + pt.name + "）";
         }
         save(ctx, a, r);
+        return r;
+    }
+
+    /**
+     * 会话失效的统一处理：存过密码就先在后台静默重登，成功了立刻重试本次签到；
+     * 重登失败或没存密码，就记下原因、通知用户，并结束这个账号的本次签到。
+     */
+    private static Result reloginThenRetry(Context ctx, Account a, Result r,
+                                           boolean allowRelogin, String why) {
+        String pwd = Secure.decrypt(a.pwdEnc);
+        if (!allowRelogin || pwd.length() == 0) {
+            r.expired = true;
+            r.msg = allowRelogin ? "登录已失效，且没有保存密码，需要手动登录一次"
+                    : "登录已失效，自动重登后仍然无效";
+            save(ctx, a, r);
+            notifyLogin(ctx, a);
+            return r;
+        }
+
+        Logs.add("【" + a.title() + "】" + why + "，开始后台自动重登");
+        Notifier.progress(ctx, "【" + a.title() + "】登录失效，正在自动重登…");
+        SilentLogin.Result lr = SilentLogin.relogin(ctx, a, 90);
+        if (lr.ok) {
+            a.cookie = lr.cookie;
+            a.lastOk = Account.STATE_NONE;
+            a.lastResult = "已自动重登，正在签到";
+            a.lastTime = System.currentTimeMillis();
+            AccountStore.get(ctx).update(a);
+            Logs.add("【" + a.title() + "】自动重登成功，继续本次签到");
+            return sign(ctx, a, false);
+        }
+
+        r.expired = true;
+        r.msg = "登录失效，自动重登失败：" + lr.reason;
+        a.lastOk = Account.STATE_FAIL;
+        a.lastResult = r.msg;
+        AccountStore.get(ctx).update(a);
+        notifyLogin(ctx, a);
+        Logs.add("【" + a.title() + "】自动重登失败：" + lr.reason);
         return r;
     }
 

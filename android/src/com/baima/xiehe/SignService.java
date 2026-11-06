@@ -9,10 +9,8 @@ import android.os.PowerManager;
 
 import java.text.SimpleDateFormat;
 import java.util.Date;
-import java.util.HashSet;
 import java.util.List;
 import java.util.Locale;
-import java.util.Set;
 
 /** 前台服务：窗口内轮询全部账号，都签上就停 */
 public class SignService extends Service {
@@ -20,7 +18,6 @@ public class SignService extends Service {
     public static volatile boolean running = false;
     private static final long WINDOW_MS = 45 * 60 * 1000L;
 
-    private final Set<Long> autoTried = new HashSet<Long>();
     private Thread worker;
     private PowerManager.WakeLock wakeLock;
     private boolean force;
@@ -128,16 +125,7 @@ public class SignService extends Service {
                     SignCore.Result r = SignCore.sign(this, a);
                     notifyOnly("【" + a.title() + "】" + r.msg);
                     if (r.ok) okN++;
-                    if (r.expired) {
-                        expiredN++;
-                        // 存过密码就顺手拉一个自动登录页，登完下一轮直接用新 Cookie 签
-                        if (Secure.has(a.pwdEnc) && !autoTried.contains(a.id)) {
-                            autoTried.add(a.id);
-                            if (LoginActivity.startAuto(this, a)) {
-                                notifyOnly("登录已失效，正在自动重新登录…");
-                            }
-                        }
-                    }
+                    if (r.expired) expiredN++;
                     if (r.soft) softN++;
                     // 账号之间留间隔（最后一个不等）
                     if (i < list.size() - 1) {

@@ -80,6 +80,11 @@ public class Notifier {
         if (nm != null) nm.notify(ID_LOGIN, b.build());
     }
 
+    /** 过程提示（自动重登中之类），直接复用结果通道 */
+    public static void progress(Context c, String text) {
+        result(c, text);
+    }
+
     public static void result(Context c, String text) {
         ensureChannels(c);
         NotificationManager nm = (NotificationManager) c.getSystemService(Context.NOTIFICATION_SERVICE);

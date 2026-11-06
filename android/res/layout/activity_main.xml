@@ -54,6 +54,12 @@
             android:text="@string/btn_refresh" />
 
         <Button
+            android:id="@+id/btnRelogin"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="@string/btn_relogin" />
+
+        <Button
             android:id="@+id/btnSign"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"

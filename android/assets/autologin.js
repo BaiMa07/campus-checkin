@@ -184,6 +184,8 @@
 
   /* 自动登录：填表 -> 点登录 -> 等滑块 -> 自动拖 -> 失败换图重试 */
   window.__autoLogin = function (u, p) {
+    if (window.__autoLoginBusy) return Promise.resolve({ ok: false, reason: 'busy' });
+    window.__autoLoginBusy = true;
     var t0 = Date.now();
     function step() {
       if (Date.now() - t0 > 45000) return Promise.resolve({ ok: false, reason: 'timeout' });

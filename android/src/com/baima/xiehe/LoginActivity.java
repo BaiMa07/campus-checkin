@@ -38,6 +38,7 @@ public class LoginActivity extends Activity {
     public static final String EXTRA_AUTO = "auto";        // 带上保存的密码自动登录
     public static final String EXTRA_USER = "user";
     public static final String EXTRA_PWD = "pwd";
+    public static final String EXTRA_BATCH = "batch";   // 批量重登中的一环，登完不自动签到
 
     /** 后台/其他页面调用：直接用存好的密码开一个自动登录页 */
     public static boolean startAuto(android.content.Context c, Account a) {
@@ -64,6 +65,7 @@ public class LoginActivity extends Activity {
     private String autoUser = "";
     private String autoPwd = "";
     private boolean autoLogin;          // 本次是否是自动重登
+    private boolean batchMode;          // 批量重登里的一环
     private boolean autoStarted;
     private String pendingUser = "";    // 新账号登录时先暂存，入库后写进数据库
     private String pendingPwd = "";
@@ -84,6 +86,7 @@ public class LoginActivity extends Activity {
         autoUser = nz(getIntent().getStringExtra(EXTRA_USER));
         autoPwd = nz(getIntent().getStringExtra(EXTRA_PWD));
         autoLogin = getIntent().getBooleanExtra(EXTRA_AUTO, false);
+        batchMode = getIntent().getBooleanExtra(EXTRA_BATCH, false);
         if (autoLogin && accountId > 0) {
             Account a = AccountStore.get(this).get(accountId);
             if (a != null) {
@@ -313,7 +316,7 @@ public class LoginActivity extends Activity {
                 runOnUiThread(new Runnable() {
                     public void run() {
                         setResult(RESULT_OK);
-                        if (autoLogin) {
+                        if (autoLogin && !batchMode) {
                             // 自动重登成功 -> 直接接着签到，用户不用再点
                             try {
                                 Intent it = new Intent(LoginActivity.this, SignService.class);
