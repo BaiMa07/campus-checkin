@@ -37,6 +37,25 @@ public class Guard {
         return o;
     }
 
+    /* ---------------- 登录互斥 ---------------- */
+
+    private static final java.util.Set<Long> LOGGING =
+            java.util.Collections.newSetFromMap(new java.util.concurrent.ConcurrentHashMap<Long, Boolean>());
+
+    /** 占住"这个号正在登录"，已经有流程在登就返回 false */
+    public static boolean beginLogin(long id) {
+        if (id <= 0) return true;
+        return LOGGING.add(Long.valueOf(id));
+    }
+
+    public static void endLogin(long id) {
+        if (id > 0) LOGGING.remove(Long.valueOf(id));
+    }
+
+    public static boolean loggingIn(long id) {
+        return id > 0 && LOGGING.contains(Long.valueOf(id));
+    }
+
     /* ---------------- 登录冷却 ---------------- */
 
     public static boolean inCooldown(Account a) {

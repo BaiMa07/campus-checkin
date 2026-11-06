@@ -209,7 +209,20 @@ public class SignCore {
 
         Logs.add("【" + a.title() + "】" + why + "，开始后台自动重登");
         Notifier.progress(ctx, "【" + a.title() + "】登录失效，正在自动重登…");
-        SilentLogin.Result lr = SilentLogin.relogin(ctx, a, 60);
+        if (!Guard.beginLogin(a.id)) {
+            r.expired = true;
+            r.retry = true;
+            r.msg = "这个号正在登录中，等它登完再说";
+            save(ctx, a, r);
+            Logs.add("【" + a.title() + "】已有登录流程在跑，本次不再并发登录");
+            return r;
+        }
+        SilentLogin.Result lr;
+        try {
+            lr = SilentLogin.relogin(ctx, a, 60);
+        } finally {
+            Guard.endLogin(a.id);
+        }
         if (lr.ok) {
             a.cookie = lr.cookie;
             a.lastLoginAt = System.currentTimeMillis();

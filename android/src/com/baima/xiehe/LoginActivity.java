@@ -96,6 +96,14 @@ public class LoginActivity extends Activity {
         }
         if (autoUser.length() == 0 || autoPwd.length() == 0) autoLogin = false;
 
+        // 占住"这个号正在登录"：后台的静默重登看到这个标记就不会再并发登一次
+        if (accountId > 0) {
+            if (!Guard.beginLogin(accountId) && autoLogin) {
+                Logs.add("后台正在给这个号自动登录，等它完成，避免两个会话撞在一起");
+                autoLogin = false;
+            }
+        }
+
         tvHint = (TextView) findViewById(R.id.tvHint);
         if (autoLogin) {
             tvHint.setText("正在自动登录「" + autoUser + "」\n自动填表、自动过滑块，稍等 10 秒左右");
@@ -187,6 +195,12 @@ public class LoginActivity extends Activity {
             // 否则一打开就是已登录状态，会把同一个账号又存一遍（这就是重复账号的原因）
             clearCookiesThenLoad();
         }
+    }
+
+    @Override
+    protected void onDestroy() {
+        if (accountId > 0) Guard.endLogin(accountId);
+        super.onDestroy();
     }
 
     /** 清空 WebView 的 Cookie 再打开登录页（数据库里的账号不受影响） */
