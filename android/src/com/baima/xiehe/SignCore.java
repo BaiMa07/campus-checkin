@@ -1,0 +1,196 @@
+package com.baima.xiehe;
+
+import android.content.Context;
+
+import java.text.SimpleDateFormat;
+import java.util.Date;
+import java.util.Locale;
+
+/**
+ * 单个账号的签到动作（同步，要在后台线程里调）。
+ * 三个调用方共用：账号列表的「签到」、一键签到、后台守护服务。
+ */
+public class SignCore {
+
+    public static class Result {
+        public boolean ok;        // 是否达成"今天已签到"
+        public boolean expired;   // 会话失效，需要重新登录
+        public boolean retry;     // 是否值得过一会儿再试
+        public boolean soft;      // 只是时机未到，不算失败
+        public String msg = "";   // 给用户看的一句话
+    }
+
+    /** 签到指定账号，并把结果写回数据库 */
+    public static Result sign(Context ctx, Account a) {
+        Result r = new Result();
+        if (a == null) {
+            r.msg = "账号不存在";
+            return r;
+        }
+        if (a.cookie == null || a.cookie.length() == 0) {
+            r.msg = "还没登录，点账号名重新登录";
+            r.expired = true;
+            save(ctx, a, r);
+            return r;
+        }
+
+        // 配了多个代理就每个账号换一个出口，免得几个号都从同一个 IP 出去
+        if (Net.count() > 1) {
+            Net.next();
+            Logs.add("【" + a.title() + "】本次出口：" + Net.activeText());
+        }
+
+        String ua = (a.ua != null && a.ua.length() > 0) ? a.ua : KqApi.DEFAULT_UA;
+
+        KqApi.Resp info = KqApi.getKqInfo(a.cookie, ua);
+        if (info.state == KqApi.State.EXPIRED) {
+            r.msg = "登录已失效，需要重新登录";
+            r.expired = true;
+            save(ctx, a, r);
+            notifyLogin(ctx, a);
+            return r;
+        }
+        if (info.state != KqApi.State.OK || info.model == null) {
+            r.msg = "接口异常：" + info.msg;
+            r.retry = true;
+            save(ctx, a, r);
+            return r;
+        }
+
+        KqModel m = info.model;
+        // 顺手补全学号 / 宿舍，列表里好看一点
+        boolean dirty = false;
+        if (m.studentNo.length() > 0 && !m.studentNo.equals(a.studentNo)) {
+            a.studentNo = m.studentNo;
+            dirty = true;
+        }
+        if (m.dorm.length() > 0 && !m.dorm.equals(a.dorm)) {
+            a.dorm = m.dorm;
+            dirty = true;
+        }
+        if ((a.name == null || a.name.length() == 0) && a.studentNo.length() > 0) {
+            a.name = a.studentNo;
+            dirty = true;
+        }
+        if (dirty) AccountStore.get(ctx).update(a);
+
+        if (m.hasSigned) {
+            r.ok = true;
+            r.msg = "今天已签到";
+            save(ctx, a, r);
+            return r;
+        }
+        if (!m.inWindow) {
+            r.msg = "不在签到时段（" + m.start + "-" + m.end + "）";
+            r.retry = true;
+            r.soft = true;
+            save(ctx, a, r);
+            return r;
+        }
+        if (m.leave) {
+            r.msg = "今天请假，不用签到";
+            r.soft = true;
+            save(ctx, a, r);
+            return r;
+        }
+
+        KqModel.Point pt;
+        Prefs pf = Prefs.get(ctx);
+        if (a.locOn && a.locLat != 0 && a.locLng != 0) {
+            // 这个账号单独指定的位置优先
+            pt = new KqModel.Point();
+            pt.name = a.locName.length() > 0 ? a.locName : "自定义位置";
+            pt.lat = a.locLat;
+            pt.lng = a.locLng;
+            pt.radius = 30;
+        } else if (pf.locOn() && pf.locLat() != 0 && pf.locLng() != 0) {
+            // 主界面设的默认位置
+            pt = new KqModel.Point();
+            pt.name = pf.locName().length() > 0 ? pf.locName() : "自定义位置";
+            pt.lat = pf.locLat();
+            pt.lng = pf.locLng();
+            pt.radius = 30;
+        } else if (a.lastLocLat != 0 && a.lastLocLng != 0) {
+            // 自动：沿用上一次签到成功的位置
+            pt = new KqModel.Point();
+            pt.name = a.lastLocName.length() > 0 ? a.lastLocName : "上次位置";
+            pt.lat = a.lastLocLat;
+            pt.lng = a.lastLocLng;
+            pt.radius = 30;
+        } else {
+            pt = m.pickPoint();
+        }
+        if (pt == null) {
+            r.msg = "没匹配到打卡点（宿舍：" + m.dorm + "）";
+            save(ctx, a, r);
+            return r;
+        }
+
+        double[] c = KqModel.jitter(pt.lat, pt.lng);
+        KqApi.Resp sub = KqApi.addKqInfo(a.cookie, ua, pt.name, c[1], c[0]);
+
+        if (sub.state == KqApi.State.EXPIRED) {
+            r.msg = "登录已失效，需要重新登录";
+            r.expired = true;
+            save(ctx, a, r);
+            notifyLogin(ctx, a);
+            return r;
+        }
+        if (sub.state != KqApi.State.OK) {
+            r.msg = "提交失败：" + sub.msg;
+            r.retry = true;
+            save(ctx, a, r);
+            return r;
+        }
+
+        // 提交成功后再查一次，确认服务端真的记上了
+        try { Thread.sleep(2000); } catch (InterruptedException ignored) { }
+        KqApi.Resp chk = KqApi.getKqInfo(a.cookie, ua);
+        // 记住这次用的位置，下次自动沿用
+        a.lastLocName = pt.name;
+        a.lastLocLat = pt.lat;
+        a.lastLocLng = pt.lng;
+
+        if (chk.state == KqApi.State.OK && chk.model != null && chk.model.hasSigned) {
+            r.ok = true;
+            r.msg = "签到成功（" + pt.name + "）";
+        } else {
+            // 提交成功但状态没刷新，算达成，避免重复提交
+            r.ok = true;
+            r.msg = "已提交，状态待刷新（" + pt.name + "）";
+        }
+        save(ctx, a, r);
+        return r;
+    }
+
+    /** 会话过期时：存过密码就发"点一下自动重登"的通知，没存就提示手动登一次 */
+    private static void notifyLogin(Context ctx, Account a) {
+        try {
+            String pwd = Secure.decrypt(a.pwdEnc);
+            if (pwd.length() > 0) {
+                Notifier.needLogin(ctx, a.id, a.title());
+            } else {
+                Notifier.result(ctx, "【" + a.title() + "】登录已失效，打开应用重新登录一次"
+                        + "（登录时输入的密码会自动保存，以后就不用再手动登了）");
+            }
+        } catch (Throwable ignored) { }
+    }
+
+    private static void save(Context ctx, Account a, Result r) {
+        a.lastTime = System.currentTimeMillis();
+        a.lastOk = r.ok ? Account.STATE_OK : (r.soft ? Account.STATE_NONE : Account.STATE_FAIL);
+        a.lastResult = r.msg;
+        AccountStore.get(ctx).update(a);
+        if (r.ok) {
+            String day = new SimpleDateFormat("yyyy-MM-dd", Locale.CHINA)
+                    .format(new Date(a.lastTime > 0 ? a.lastTime : System.currentTimeMillis()));
+            AccountStore.get(ctx).record(a.id, day, true, r.msg);
+        }
+        Logs.add("【" + a.title() + "】" + r.msg);
+    }
+
+    public static String hhmm(long ms) {
+        if (ms <= 0) return "—";
+        return new SimpleDateFormat("MM-dd HH:mm", Locale.CHINA).format(new Date(ms));
+    }
+}

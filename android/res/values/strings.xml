@@ -1,0 +1,44 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">协和查寝</string>
+    <string name="login_hint">请用学号密码登录，拖动滑块完成验证，并勾选「7天免登录」</string>
+
+    <string name="btn_login">登录 / 添加账号</string>
+    <string name="btn_refresh">刷新状态</string>
+    <string name="btn_sign">立即签到（全部账号）</string>
+    <string name="btn_net">网络 / 出口 IP</string>
+    <string name="btn_loc">签到位置</string>
+    <string name="row_loc">位置</string>
+    <string name="btn_time">设置每天检查时间</string>
+
+    <string name="schedule_title">定时自动打卡</string>
+    <string name="schedule_on">已开启：每天 %1$s 自动签到，两个兜底时间点也开着</string>
+    <string name="schedule_off_hint">已关闭：不会自动签到，仍可手动点「立即签到」</string>
+
+    <string name="btn_noti">允许通知（Android 13+）</string>
+    <string name="btn_alarm">允许精确闹钟</string>
+    <string name="btn_battery">忽略电池优化</string>
+
+    <string name="btn_accounts">账号管理 / 多账号签到</string>
+    <string name="btn_clear_cache">清除缓存</string>
+    <string name="btn_clear_log">清除日志</string>
+    <string name="btn_export_log">导出日志</string>
+
+    <string name="sec_auth">授权与保活</string>
+    <string name="sec_tools">缓存与日志</string>
+    <string name="sec_log">运行日志</string>
+    <string name="cancel">取消</string>
+
+    <!-- 账号管理页 -->
+    <string name="acct_loading">正在读取账号…</string>
+    <string name="btn_add_account">＋ 添加账号（去网页登录）</string>
+    <string name="btn_sign_all">一键签到（全部账号）</string>
+    <string name="btn_gap">账号间隔：3 秒</string>
+    <string name="sec_accounts">账号列表</string>
+    <string name="btn_back">返回</string>
+    <string name="row_sign">签到</string>
+    <string name="row_del">删除</string>
+    <string name="acct_empty">还没有账号。点上面「添加账号」登录一次，登录成功后会自动存进来。</string>
+    <string name="ok">确定</string>
+    <string name="save">保存</string>
+</resources>
