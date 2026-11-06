@@ -128,7 +128,8 @@ public class SilentLogin {
 
                     String loginUrl = "https://ids.sdxiehe.edu.cn/authserver/login?service="
                             + java.net.URLEncoder.encode(KqApi.SERVICE, "UTF-8");
-                    // 关键：不挂到窗口上的 WebView 不会执行 JS，这里挂一个 1x1 的透明悬浮窗
+                    // 关键：不挂到窗口上的 WebView 不会执行 JS；这里挂一个 360x640、1% 不透明的悬浮窗，
+    // 尺寸要给够，滑块要拿元素尺寸算拖动距离，1x1 的话算不出来
                     WindowManager wm = (WindowManager) app.getSystemService(Context.WINDOW_SERVICE);
                     WindowManager.LayoutParams lp = new WindowManager.LayoutParams(
                             360, 640,
