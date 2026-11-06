@@ -177,7 +177,7 @@ public class SignCore {
 
         Logs.add("【" + a.title() + "】" + why + "，开始后台自动重登");
         Notifier.progress(ctx, "【" + a.title() + "】登录失效，正在自动重登…");
-        SilentLogin.Result lr = SilentLogin.relogin(ctx, a, 90);
+        SilentLogin.Result lr = SilentLogin.relogin(ctx, a, 60);
         if (lr.ok) {
             a.cookie = lr.cookie;
             a.lastOk = Account.STATE_NONE;

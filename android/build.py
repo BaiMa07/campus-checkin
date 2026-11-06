@@ -23,11 +23,11 @@ CLASSES = os.path.join(BUILD, "classes")
 DEX = os.path.join(BUILD, "dex")
 
 PKG = "com.baima.xiehe"
-APP_NAME = "XieHeQianDao-2.2.apk"
+APP_NAME = "XieHeQianDao-2.3.apk"
 MIN_SDK = "24"
 TARGET_SDK = "33"
-VERSION_CODE = "13"
-VERSION_NAME = "2.2"
+VERSION_CODE = "14"
+VERSION_NAME = "2.3"
 
 DL = {
     "build-tools_r34.zip": "https://dl.google.com/android/repository/build-tools_r34-windows.zip",

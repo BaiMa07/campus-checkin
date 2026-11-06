@@ -115,6 +115,10 @@ public class MainActivity extends Activity {
             public void onClick(View v) { askBattery(); }
         });
 
+        findViewById(R.id.btnOverlay).setOnClickListener(new View.OnClickListener() {
+            public void onClick(View v) { askOverlay(); }
+        });
+
         findViewById(R.id.btnClearCache).setOnClickListener(new View.OnClickListener() {
             public void onClick(View v) { confirmClearCache(); }
         });
@@ -523,6 +527,37 @@ public class MainActivity extends Activity {
     @Override
     public void onRequestPermissionsResult(int code, String[] perms, int[] res) {
         Logs.add("通知权限：" + (res.length > 0 && res[0] == 0 ? "已允许" : "被拒绝"));
+    }
+
+    /** 悬浮窗权限：后台静默重登要用它把登录网页挂起来 */
+    private void askOverlay() {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.M) {
+            toast("这个系统版本不需要单独授权");
+            return;
+        }
+        if (Settings.canDrawOverlays(this)) {
+            toast("已允许，定时任务遇到登录失效会自动重登");
+            return;
+        }
+        new AlertDialog.Builder(this)
+                .setTitle("允许后台自动登录")
+                .setMessage("定时打卡时如果登录过期了，程序会在后台把登录网页挂到一个几乎透明的悬浮窗上，"
+                        + "自动填表、自动过滑块，登完继续签到。\n\n"
+                        + "不加这个权限也能用，只是失效时会改成发一条通知，需要你点一下。\n\n"
+                        + "点「去授权」后找到本应用，打开「显示在其他应用上层 / 悬浮窗」开关。")
+                .setPositiveButton("去授权", new DialogInterface.OnClickListener() {
+                    public void onClick(DialogInterface d, int w) {
+                        try {
+                            Intent i = new Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION,
+                                    Uri.parse("package:" + getPackageName()));
+                            startActivity(i);
+                        } catch (Throwable t) {
+                            toast("打不开设置页，请手动去系统设置里授权");
+                        }
+                    }
+                })
+                .setNegativeButton("以后再说", null)
+                .show();
     }
 
     /* ---------------- 缓存与日志 ---------------- */

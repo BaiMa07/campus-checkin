@@ -7,6 +7,7 @@
     <string name="btn_refresh">刷新状态</string>
     <string name="btn_sign">立即签到（全部账号）</string>
     <string name="btn_relogin">一键重新登录</string>
+    <string name="btn_overlay">允许后台自动登录（悬浮窗）</string>
     <string name="btn_net">网络 / 出口 IP</string>
     <string name="btn_loc">签到位置</string>
     <string name="row_loc">位置</string>
