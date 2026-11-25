@@ -28,6 +28,7 @@ ALLOW_VALUES = {"36.740000", "117.278000"}
 RULES = [
     ("学号（12~15 位，20 开头）", re.compile(r"(?<!\d)20\d{10,13}(?!\d)")),
     ("手机号", re.compile(r"(?<!\d)1[3-9]\d{9}(?!\d)")),
+    ("楼栋号（数字+号公寓/号楼）", re.compile(r"\d{1,3}\s*号(?:公寓|宿舍楼|宿舍|号楼)")),
     ("经纬度（4 位以上小数）", re.compile(r"(?<!\d)(?:3\d|4\d|1[0-2]\d)\.\d{4,}(?!\d)")),
     ("Cookie / 会话串", re.compile(r"(?:route|JSESSIONID|SESSION|PHPSESSID|token)\s*=\s*[A-Za-z0-9%\-_\.]{8,}",
                                     re.I)),
