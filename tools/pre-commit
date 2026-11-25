@@ -1,0 +1,10 @@
+#!/bin/sh
+# 提交前扫描敏感信息（学号 / 手机号 / 精确坐标 / Cookie / 明文口令）
+# 脚本本体在 tools/check_secrets.py，改规则改那边
+ROOT=$(git rev-parse --show-toplevel) || exit 0
+
+PY=python
+command -v python >/dev/null 2>&1 || PY="py -3"
+command -v python >/dev/null 2>&1 || command -v py >/dev/null 2>&1 || exit 0
+
+exec $PY "$ROOT/tools/check_secrets.py"

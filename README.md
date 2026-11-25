@@ -259,6 +259,9 @@ POST /xsfw/sys/swmzncqapp/kqController/addKqInfo.do
 ├── LICENSE
 ├── docs/
 │   └── api.md              接口与登录流程说明
+├── tools/
+│   ├── check_secrets.py    提交前扫描学号 / 手机号 / 坐标 / Cookie
+│   └── pre-commit          钩子模板，clone 后装一次
 ├── pc/                     电脑版
 │   ├── app.pyw             界面入口
 │   ├── core.py             账号库、接口调用、签到逻辑
@@ -304,3 +307,24 @@ python build.py
 
 完整条款见 [LICENSE](LICENSE)。仓库里没有任何他人的账号、密码、Cookie 或个人信息，
 也请不要在 Issue、PR 里粘贴自己的学号、密码、Cookie、宿舍号或定位坐标。
+
+---
+
+## 提交前检查
+
+仓库里一旦混进学号、坐标或 Cookie，公开之后就收不回来了。`tools/check_secrets.py`
+会在 `git commit` 时扫描暂存区，命中这些模式直接拦下：
+
+- 学号（12~15 位、20 开头）、手机号
+- 4 位以上小数的经纬度（`36.740000` 这类占位值放行）
+- `JSESSIONID=` / `route=` 这类会话串
+- `password = "..."` 形式的明文口令
+
+新 clone 的仓库不会自带钩子，装一次即可：
+
+```
+cp tools/pre-commit .git/hooks/pre-commit
+chmod +x .git/hooks/pre-commit
+```
+
+规则在 `tools/check_secrets.py` 顶部的 `RULES` 里，误报就在那一行末尾加 `# nosecret`。
