@@ -58,3 +58,8 @@ desktop.ini
 /*.png
 /*.jpg
 /*.jpeg
+
+# ---------------- 签名密钥（只留本机，不进仓库）----------------
+# 公开仓库里的 keystore 等于把"你手机认的升级签名"送人，
+# 别人可以签一个同签名的 APK 伪装成更新包
+android/keystore/*.keystore

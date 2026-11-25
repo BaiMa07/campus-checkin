@@ -1,9 +1,42 @@
 版权所有，保留一切权利。
 
-本仓库为私人项目，未开源。
+本仓库的源代码公开展示，仅供学习与技术交流参考，不构成开源授权。
+未授予复制、修改、分发、镜像或商业使用的许可；代码公开可见不等于放弃权利。
 
-未经作者书面许可，不得复制、转载、镜像、fork 本仓库的全部或部分内容，
-不得以任何形式分发源代码或编译产物，不得修改后二次发布，不得用于商业用途。
+---
 
-本软件按现状提供，不附带任何担保。因使用本软件产生的任何直接或间接后果，
-由使用者自行承担。
+## 免责声明 / Disclaimer
+
+1. 本项目为个人独立开发，**与山东协和学院及任何学校部门无关**，未获其授权、认可或支持。
+   仓库中出现的学校名称、接口地址仅用于说明技术原理。
+
+2. 本项目仅模拟用户在浏览器中的正常操作（登录、查询、提交），不侵入、不篡改、
+   不删除学校服务器上的任何数据，也不绕过任何身份验证。
+
+3. 使用本项目**可能违反学校的考勤管理规定**。由此产生的一切后果——包括但不限于
+   考勤记录异常、纪律处分、账号被冻结或封禁——**由使用者自行承担**，作者不承担任何责任。
+
+4. 本软件按现状（AS IS）提供，不对可用性、稳定性、准确性作任何担保。学校接口变更、
+   风控策略调整、页面改版都可能导致功能失效，作者没有义务修复或提供支持。
+
+5. **禁止**将本项目用于代他人签到、收取费用牟利，或任何违反法律法规的用途。
+
+6. 仓库中不包含任何他人的个人信息、账号、密码或 Cookie。请勿在 Issue、Pull Request
+   或讨论区粘贴自己的学号、密码、Cookie、宿舍号或定位坐标。
+
+在适用法律允许的最大范围内，作者不对使用或无法使用本软件所造成的任何直接、间接、
+附带或后果性损失承担责任。如果你不同意上述任何一条，请立即停止使用并删除本项目。
+
+---
+
+Copyright (c) 2026. All rights reserved.
+
+This source code is published for learning and technical reference only. It is **not**
+open source: no permission is granted to copy, modify, distribute, mirror, or use it
+commercially. Public visibility does not waive any rights.
+
+This project is not affiliated with, endorsed by, or supported by Shandong Xiehe
+University. It only replays the same requests a normal browser would send. Using it may
+violate your school's attendance rules; you are solely responsible for any consequence.
+The software is provided "as is", without warranty of any kind. Do not use it to sign in
+on behalf of others or for any commercial or unlawful purpose.
